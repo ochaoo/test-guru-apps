@@ -1,0 +1,25 @@
+{
+  "name": "event-system",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/common",
+    "packages/gateway",
+    "packages/fb-collector",
+    "packages/ttk-collector",
+    "packages/reporter"
+  ],
+  "scripts": {
+    "build:common": "npm run --workspace packages/common build",
+    "build": "npm run build:common && npm run --workspaces --if-present build",
+    "start:gateway": "npm run --workspace packages/gateway start:dev",
+    "start:fb-collector": "npm run --workspace packages/fb-collector start:dev",
+    "start:ttk-collector": "npm run --workspace packages/ttk-collector start:dev",
+    "start:reporter": "npm run --workspace packages/reporter start:dev",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.0",
+    "cross-env": "^7.0.3"
+  }
+}

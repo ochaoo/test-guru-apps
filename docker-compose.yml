@@ -1,0 +1,118 @@
+services:
+  # =======================
+  # PostgreSQL Database
+  # =======================
+  postgres:
+    image: postgres:15
+    restart: always
+    environment:
+      POSTGRES_USER: myuser
+      POSTGRES_PASSWORD: mypassword
+      POSTGRES_DB: mydb
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U myuser"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  # =======================
+  # NATS
+  # =======================
+  nats:
+    image: nats:latest
+    restart: always
+    ports:
+      - "4222:4222"
+    healthcheck:
+      test: ["CMD", "nats-server", "--help"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # =======================
+  # FB Collector Service
+  # =======================
+  fb-collector:
+    build:
+      context: ./packages/fb-collector
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://myuser:mypassword@postgres:5432/mydb
+      NATS_URL: nats://nats:4222
+      NODE_ENV: development
+    command: >
+      sh -c "npx prisma migrate deploy &&
+             node dist/main.js"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health/liveness"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "3001:3000"
+
+  # =======================
+  # Reporter Service
+  # =======================
+  reporter:
+    build:
+      context: ./packages/reporter
+    depends_on:
+      postgres:
+        condition: service_healthy
+      nats:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgres://myuser:mypassword@postgres:5432/mydb
+      NATS_URL: nats://nats:4222
+      NODE_ENV: development
+    command: >
+      sh -c "npx prisma migrate deploy &&
+             node dist/main.js"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health/liveness"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    ports:
+      - "3002:3000"
+
+  # =======================
+  # Prometheus
+  # =======================
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    restart: always
+
+  # =======================
+  # Grafana
+  # =======================
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+    restart: always
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres_data:
+  prometheus_data:
+  grafana_data:

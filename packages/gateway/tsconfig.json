@@ -1,0 +1,14 @@
+{
+    "extends": "../../tsconfig.json",
+    "references": [{ "path": "../common" }],
+    "compilerOptions": {
+        "rootDir": "src",
+        "outDir": "dist",
+        "emitDecoratorMetadata": true,
+        "experimentalDecorators": true,
+        "removeComments": true,
+        "allowSyntheticDefaultImports": true,
+        "incremental": true
+    },
+    "include": ["src"]
+}

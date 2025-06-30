@@ -1,0 +1,29 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/common" },
+    { "path": "packages/gateway" },
+    { "path": "packages/fb-collector" },
+    { "path": "packages/ttk-collector" },
+    { "path": "packages/reporter" }
+  ],
+  "compilerOptions": {
+    "composite": true,
+    "module": "commonjs",
+    "target": "ES2021",
+    "moduleResolution": "node",
+    "declaration": true,
+    "declarationMap": true,
+    "sourceMap": true,
+    "rootDir": ".",
+    "baseUrl": ".",
+    "paths": {
+      "@event-system/common": ["packages/common/dist"],
+      "@event-system/common/*": ["packages/common/dist/*"]
+    },
+    "skipLibCheck": true,
+    "strict": true,
+    "forceConsistentCasingInFileNames": true,
+    "noFallthroughCasesInSwitch": true
+  }
+}
