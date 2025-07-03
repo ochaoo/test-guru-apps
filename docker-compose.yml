@@ -4,18 +4,18 @@ services:
   # =======================
   postgres:
     image: postgres:15
-    restart: always
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: myuser
-      POSTGRES_PASSWORD: mypassword
-      POSTGRES_DB: mydb
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: events
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U myuser"]
-      interval: 5s
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
       timeout: 5s
       retries: 5
 
@@ -23,15 +23,86 @@ services:
   # NATS
   # =======================
   nats:
-    image: nats:latest
-    restart: always
+    image: nats:2.10
+    restart: unless-stopped
+    command: ["-js", "-DV"]
     ports:
       - "4222:4222"
+      - "8222:8222"
     healthcheck:
-      test: ["CMD", "nats-server", "--help"]
+      test: ["CMD", "nats", "server", "check", "nats://localhost:4222"]
       interval: 10s
       timeout: 5s
       retries: 5
+
+  # =======================
+  # Prometheus
+  # =======================
+  prometheus:
+    image: prom/prometheus
+    restart: unless-stopped
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    ports:
+      - "9090:9090"
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:9090/-/healthy"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # =======================
+  # Grafana
+  # =======================
+  grafana:
+    image: grafana/grafana
+    restart: unless-stopped
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    ports:
+      - "3001:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/api/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+
+  # =======================
+  # Publisher Service
+  # =======================
+  publisher:
+    image: andriiuni/events
+    restart: unless-stopped
+    environment:
+      - EVENT_ENDPOINT=http://gateway:3000/webhook
+    depends_on:
+      - gateway
+
+  # =======================
+  # Gateway Service
+  # =======================
+  gateway:
+    build:
+      context: ./packages/gateway
+    restart: unless-stopped
+    environment:
+      - NATS_URL=nats://nats:4222
+      - PORT=3000
+    ports:
+      - "3000:3000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    depends_on:
+      nats:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   # =======================
   # FB Collector Service
@@ -39,25 +110,31 @@ services:
   fb-collector:
     build:
       context: ./packages/fb-collector
+    restart: unless-stopped
+    environment:
+      - NATS_URL=nats://nats:4222
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/events?schema=public
     depends_on:
-      postgres:
-        condition: service_healthy
       nats:
         condition: service_healthy
+      postgres:
+        condition: service_healthy
+
+  # =======================
+  # TTK Collector Service
+  # =======================
+  ttk-collector:
+    build:
+      context: ./packages/ttk-collector
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://myuser:mypassword@postgres:5432/mydb
-      NATS_URL: nats://nats:4222
-      NODE_ENV: development
-    command: >
-      sh -c "npx prisma migrate deploy &&
-             node dist/main.js"
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health/liveness"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-    ports:
-      - "3001:3000"
+      - NATS_URL=nats://nats:4222
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/events?schema=public
+    depends_on:
+      nats:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
 
   # =======================
   # Reporter Service
@@ -65,52 +142,19 @@ services:
   reporter:
     build:
       context: ./packages/reporter
-    depends_on:
-      postgres:
-        condition: service_healthy
-      nats:
-        condition: service_healthy
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgres://myuser:mypassword@postgres:5432/mydb
-      NATS_URL: nats://nats:4222
-      NODE_ENV: development
-    command: >
-      sh -c "npx prisma migrate deploy &&
-             node dist/main.js"
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/events?schema=public
+    ports:
+      - "4000:3000"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:3000/health/liveness"]
+      test: ["CMD", "curl", "-f", "http://localhost:3000/health"]
       interval: 10s
       timeout: 5s
       retries: 5
-    ports:
-      - "3002:3000"
-
-  # =======================
-  # Prometheus
-  # =======================
-  prometheus:
-    image: prom/prometheus
-    volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
-      - prometheus_data:/prometheus
-    ports:
-      - "9090:9090"
-    command:
-      - "--config.file=/etc/prometheus/prometheus.yml"
-    restart: always
-
-  # =======================
-  # Grafana
-  # =======================
-  grafana:
-    image: grafana/grafana
-    ports:
-      - "3000:3000"
-    volumes:
-      - grafana_data:/var/lib/grafana
-    restart: always
     depends_on:
-      - prometheus
+      postgres:
+        condition: service_healthy
 
 volumes:
   postgres_data:
